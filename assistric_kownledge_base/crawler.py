@@ -6,7 +6,6 @@ from scrapy import signals
 from scrapy.signalmanager import dispatcher
 from billiard.context import Process
 from assistric_kownledge_base.models.crawler_result import CrawlerResult
-from crawl4ai import AsyncWebCrawler
 
 
 def run_crawler(url, max_pages, q):
@@ -60,23 +59,3 @@ def crawl_target_website(url, max_pages=10) -> list[CrawlerResult]:
     
     urls = [ CrawlerResult(url=r['url']) for r in results ]
     return urls
-
-async def scrape_target_website(url: str):
-    """
-    Scrape a website using a Celery task.
-
-    Args:
-        url (str): The website URL to scrape.
-
-    Returns:
-        str: A message indicating the task was submitted successfully.
-    """
-    # Create an instance of AsyncWebCrawler
-    async with AsyncWebCrawler() as crawler:
-        # Run the crawler on a URL
-        result = await crawler.arun(url=url)
-
-        # Print the extracted content
-        return result.markdown
-    
-    return "Crawling task submitted successfully"
