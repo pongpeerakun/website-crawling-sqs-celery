@@ -6,7 +6,6 @@ from langchain_core.documents.base import Document
 import os
 import chromadb
 
-
 load_dotenv()
 
 class ChromaClient:
@@ -36,7 +35,7 @@ class ChromaClient:
         )
 
         self.chromaDb = Chroma(
-            collection_name="knowledge_base",
+            collection_name="documents",
             client=client,
             embedding_function=embeddings,
         )

@@ -34,15 +34,13 @@ class WebsiteSpider(CrawlSpider):
     def parse_page(self, response):
         """Parse each page and extract links."""
 
-        # print (f'Crawling page: {response.url}')
         self.pages_crawled += 1
         
         if self.pages_crawled > self.max_pages:
             raise CloseSpider('Reached maximum number of pages')
         
         # Extract all links from the page
-        all_links = response.css('a::attr(href)').getall()
-        
+        # all_links = response.css('a::attr(href)').getall()
         return {
             'url': response.url,
             # 'title': response.css('title::text').get(),
