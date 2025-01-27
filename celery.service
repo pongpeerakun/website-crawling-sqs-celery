@@ -1,0 +1,22 @@
+# move to /etc/systemd/system/celery.service
+# reload daemon "sudo systemctl daemon-reload"
+# enable celery "sudo systemctl enable celery"
+# start celery "sudo systemctl start celery"
+# check status "sudo systemctl status celery"
+# stop celery "sudo systemctl stop celery"
+# restart celery "sudo systemctl restart celery"
+# check last 20 logs "sudo journalctl -u celery -n 20"
+
+[Unit]
+Description=Celery Worker
+After=network.target
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/app
+ExecStart=/home/ec2-user/app/venv/bin/celery -A celery_app worker --loglevel=info
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
