@@ -1,13 +1,70 @@
-name: Publish celery app
+name: PUBLISH APP
 on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-artifact:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11-dev
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11-dev
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Create and activate virtualenv, install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          pip install playwright
+          playwright install-deps
+          playwright install chromium
+
+      - name: Run tests
+        run: |
+          source venv/bin/activate
+          pytest
+
+      - name: Create .env from env.prod
+        run: |
+          cp env.prod .env
+
+      - name: Create deployment package
+        run: |
+          zip -r kb-artifact.zip . -x "*.git*" "venv/*" "*.pytest_cache*" "__pycache__/*" "test/" "main.py" ".github/*" "README.md" "celery.service"
+
+      # Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Official Github workflow instance has AWS CLI pre-installed
+      # Install AWS CLI for act using purposedly
+      - name: Install AWS CLI
+        run: |
+          pip install awscli
+
+      - name: Deploy to AWS S3
+        run: |
+          aws s3 cp kb-artifact.zip s3://${{ secrets.AWS_S3_BUCKET }}/knowledge-base/kb-artifact.zip
+
+  deploy:
+    needs: build-artifact
+    runs-on: ubuntu-latest
+    steps:
       - name: Create SSH directory
         run: mkdir -p ~/.ssh/
       
@@ -23,32 +80,48 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
-      
-      - name: Upload file to EC2
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          scp -i ~/.ssh/key.pem -r ./* $EC2_USER@$EC2_HOST:/home/$EC2_USER/app/
-      
-      - name: Install requirements
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          ssh -i ~/.ssh/key.pem $EC2_USER@$EC2_HOST "cd /home/$EC2_USER/app/ && mv env.prod .env"
-          ssh -i ~/.ssh/key.pem $EC2_USER@$EC2_HOST "cd /home/$EC2_USER/app/ && source venv/bin/activate && pip install -r requirements.txt"
 
-      - name: Check Chromadb health
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          ssh -i ~/.ssh/key.pem $EC2_USER@$EC2_HOST "cd /home/$EC2_USER/app/ && source venv/bin/activate && python health_check.py"
+      # Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Restart celery
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
+      # Official Github workflow instance has AWS CLI pre-installed
+      # Install AWS CLI for act using purposedly
+      - name: Install AWS CLI
         run: |
-          ssh -i ~/.ssh/key.pem $EC2_USER@$EC2_HOST "cd /home/$EC2_USER/app/ && source venv/bin/activate && sudo systemctl restart celery"
+          pip install awscli
+
+      - name: Download deployment package
+        run: |
+          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/knowledge-base/kb-artifact.zip kb-artifact.zip
+
+      - name: Create deployment script
+        run: |
+          cat <<EOF > deploy.sh
+          #!/bin/bash
+          echo "Deploying to EC2"
+          scp /home/${{ secrets.EC2_USER }}/knowledge-base/kb-artifact.zip  ${{ secrets.APP_ALIAS }}:~/
+          ssh ${{ secrets.APP_ALIAS }} "cd /opt/apps/knowledgebase && sudo ls -A | grep -xvF venv | xargs sudo rm -rf --"
+          ssh ${{ secrets.APP_ALIAS }} "sudo mv kb-artifact.zip /opt/apps/knowledgebase/kb-artifact.zip"
+          ssh ${{ secrets.APP_ALIAS }} "sudo systemctl stop celery"
+          ssh ${{ secrets.APP_ALIAS }} "cd /opt/apps/knowledgebase && sudo unzip kb-artifact.zip"
+          ssh ${{ secrets.APP_ALIAS }} "cd /opt/apps/knowledgebase && mv env.prod .env"
+          ssh ${{ secrets.APP_ALIAS }} "cd /opt/apps/knowledgebase && source venv/bin/activate && pip install -r requirements.txt"
+          ssh ${{ secrets.APP_ALIAS }} "cd /opt/apps/knowledgebase && source venv/bin/activate && python health_check.py"
+          ssh ${{ secrets.APP_ALIAS }} "sudo systemctl start celery"
+          ssh ${{ secrets.APP_ALIAS }} "sudo systemctl status celery"
+          EOF
+
+      - name: Upload to Bastion
+        run: |
+          zip -r deployment-package.zip deploy.sh kb-artifact.zip
+          scp -i ~/.ssh/key.pem deployment-package.zip ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/knowledge-base/
+          ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd /home/${{ secrets.EC2_USER }}/knowledge-base && unzip -o deployment-package.zip"
+
+      - name: Run deployment script
+        run: |
+          ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "chmod +x /home/${{ secrets.EC2_USER }}/knowledge-base/deploy.sh && /home/${{ secrets.EC2_USER }}/knowledge-base/deploy.sh"

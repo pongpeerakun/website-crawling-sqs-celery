@@ -5,7 +5,6 @@ from assistric_kownledge_base.libs.aws import AwsSdk
 from assistric_kownledge_base.libs.chroma import ChromaClient
 from assistric_kownledge_base.models.scraping_website import ScrapingWebsite
 import asyncio
-import json
 
 @app.task(name="crawl_website")
 def crawl_website(knowledge_base_id: str, url: str) -> str:

@@ -14,8 +14,8 @@ After=network.target
 [Service]
 User=ec2-user
 Group=ec2-user
-WorkingDirectory=/home/ec2-user/app
-ExecStart=/home/ec2-user/app/venv/bin/celery -A celery_app worker --loglevel=info
+WorkingDirectory=/opt/apps/knowledgebase
+ExecStart=/opt/apps/knowledgebase/venv/bin/celery -A celery_app worker --loglevel=info
 Restart=always
 
 [Install]
