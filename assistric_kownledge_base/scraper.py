@@ -34,12 +34,12 @@ async def scrape_target_website(knowledge_bases: list[ScrapingWebsite]) -> list[
     async with AsyncWebCrawler() as crawler:
         for kb in knowledge_bases:
             # Run the crawler on a URL
-            url = kb["url"]
+            url = kb.url
             result = await crawler.arun(url=url, config=config)
             md_header_splits = markdown_splitter.split_text(result.markdown)
             for md in md_header_splits:
                 md.metadata["website"] = url
-                md.metadata["linkId"] = kb["id"]
+                md.metadata["linkId"] = kb.id
             documents += md_header_splits
         
     return documents

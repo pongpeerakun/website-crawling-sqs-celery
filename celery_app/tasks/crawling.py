@@ -30,10 +30,9 @@ def scrape_website(knowledge_bases: list[ScrapingWebsite]) -> str:
     chromaDb = ChromaClient()
 
     documents = asyncio.run(scrape_target_website(knowledge_bases))
-    # for kb in knowledge_bases:
     if documents and len(documents) > 0:
         chromaDb.add_documents(documents)
-        knowledge_base_ids = [kb["id"] for kb in knowledge_bases]
+        knowledge_base_ids = [kb.id for kb in knowledge_bases]
         message = {
             "action": "SCRAPE_WEBSITE",
             "knowledge_base_ids": knowledge_base_ids
@@ -41,3 +40,11 @@ def scrape_website(knowledge_bases: list[ScrapingWebsite]) -> str:
         AwsSdk.publish_sns_message("Scraping task completed", message)
 
     return "Crawling task submitted successfully"
+
+@app.task(name="test_message")
+def test_message(payload: dict):
+    """ Function to test message """
+    documents = asyncio.run(scrape_target_website([ScrapingWebsite(id="1", url="https://docs.crawl4ai.com/")]))
+    for doc in documents:
+        print(doc.page_content)
+    return "Test message sent successfully"
