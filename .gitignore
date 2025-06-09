@@ -112,3 +112,7 @@ media/
 
 # Environment variables
 .env
+.env.prod
+
+main.py
+.secrets
